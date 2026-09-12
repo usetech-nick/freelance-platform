@@ -16,17 +16,27 @@ const {
 
 const app = express();
 app.use(express.json()); // lets Express read JSON request bodies
+const User = require('./models/User');
+const Project = require('./models/Project');
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+.then(() => console.log('MongoDB connected'))
+.catch((err) => console.error('MongoDB connection error:', err));
 
 const PORT = 3000;
 app.get('/', (req, res) => {
   res.send('Freelance platform backend is running');
 });
+app.get('/projects/:id', async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-const User = require('./models/User');
 
 app.post('/users', async (req, res) => {
   try {
@@ -50,7 +60,6 @@ app.post('/test-user', async (req, res) => {
   res.json(user);
 });
 
-const Project = require('./models/Project');
 
 app.post('/projects', async (req, res) => {
   try {
@@ -116,6 +125,23 @@ app.post('/projects/:id/assess', async (req, res) => {
       riskCategory: category,
       exposureLimit: exposure,
       milestoneCount: milestones,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/projects/:id/requirements', async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    project.requirementsText = req.body.requirementsText;
+    await project.save(); // triggers the pre-save hook above
+
+    res.json({
+      requirementHash: project.requirementHash,
+      scopeChangeCount: project.scopeChangeCount,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

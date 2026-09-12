@@ -36,6 +36,7 @@ console.log('C (complexity risk):', complexityRisk('complex'));// expect 0.8
 console.log('Q (volatility risk):', requirementVolatilityRisk(1)); // expect 0.5
 
 const { combinePartyRisk, calculateProjectRisk, riskCategory, exposureLimit, milestoneCount } = require('./services/projectRisk');
+
 console.log('\n--- FULL PIPELINE: client + freelancer + project ---');
 
 const clientRisk = calculatePartyRisk({ S: 15, F: 1, avgRating: 4.7, D: 0, C: 15 });
@@ -58,3 +59,17 @@ console.log('Risk Category:', riskCategory(projectRisk));
 console.log('\n--- Escrow decisions ---');
 console.log('Exposure Limit:', exposureLimit(25000, projectRisk)); // expect 10781.25
 console.log('Milestone Count:', milestoneCount(riskCategory(projectRisk))); // expect 3
+
+
+const { computeRequirementHash, hasScopeChanged } = require('./services/requirementHash');
+
+console.log('\n--- Requirement hashing ---');
+const original = 'Build a 5-page website with a contact form';
+const hash1 = computeRequirementHash(original);
+console.log('Hash:', hash1);
+
+const sameText = 'Build a 5-page website with a contact form';
+console.log('Same text, scope changed?', hasScopeChanged(hash1, sameText)); // expect false
+
+const editedText = 'Build a 10-page website with a contact form and blog';
+console.log('Edited text, scope changed?', hasScopeChanged(hash1, editedText)); // expect true
