@@ -15,9 +15,9 @@ contract Escrow {
 
     address public client;
     address public freelancer;
+    address public backendOracle;
     uint public riskCategory; // 0 = Low, 1 = Medium, 2 = High
     bytes32 public requirementHash;
-
     Milestone[] public milestones;
 
     modifier onlyClient() {
@@ -30,19 +30,32 @@ contract Escrow {
         _;
     }
 
+    modifier onlyOracle() {
+        require(
+            msg.sender == backendOracle,
+            "Only the backend oracle can call this"
+        );
+        _;
+    }
+
+    event Refunded(uint amount);
     event Deposited(uint totalAmount, uint milestoneCount);
     event MilestoneSubmitted(uint milestoneIndex);
     event MilestoneApproved(uint milestoneIndex, uint amountPaid);
+    event RequirementHashUpdated(bytes32 newHash);
+    event RiskCategoryUpdated(uint newRiskCategory);
 
     constructor(
         address _client,
         address _freelancer,
+        address _backendOracle,
         uint _riskCategory,
         bytes32 _requirementHash,
         uint[] memory _milestoneAmounts
     ) payable {
         require(_client != address(0), "Invalid client address");
         require(_freelancer != address(0), "Invalid freelancer address");
+        require(_backendOracle != address(0), "Invalid oracle address");
         require(_milestoneAmounts.length > 0, "Need at least one milestone");
 
         uint total = 0;
@@ -63,6 +76,7 @@ contract Escrow {
 
         client = _client;
         freelancer = _freelancer;
+        backendOracle = _backendOracle;
         riskCategory = _riskCategory;
         requirementHash = _requirementHash;
 
@@ -98,5 +112,34 @@ contract Escrow {
         require(success, "Transfer to freelancer failed");
 
         emit MilestoneApproved(milestoneIndex, amount);
+    }
+
+    function refund() public onlyClient {
+        uint remaining = 0;
+
+        for (uint i = 0; i < milestones.length; i++) {
+            if (milestones[i].status != MilestoneStatus.Approved) {
+                remaining += milestones[i].amount;
+                milestones[i].status = MilestoneStatus.Approved; // mark as settled so it can't be paid out twice
+            }
+        }
+
+        require(remaining > 0, "Nothing left to refund");
+
+        (bool success, ) = payable(client).call{value: remaining}("");
+        require(success, "Refund transfer failed");
+
+        emit Refunded(remaining);
+    }
+
+    function updateRequirementHash(bytes32 newHash) public onlyClient {
+        requirementHash = newHash;
+        emit RequirementHashUpdated(newHash);
+    }
+
+    function updateRiskCategory(uint newRiskCategory) public onlyOracle {
+        require(newRiskCategory <= 2, "Invalid risk category");
+        riskCategory = newRiskCategory;
+        emit RiskCategoryUpdated(newRiskCategory);
     }
 }
