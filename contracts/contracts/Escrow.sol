@@ -19,6 +19,7 @@ contract Escrow {
     uint public riskCategory; // 0 = Low, 1 = Medium, 2 = High
     bytes32 public requirementHash;
     Milestone[] public milestones;
+    address public disputeContract;
 
     modifier onlyClient() {
         require(msg.sender == client, "Only the client can call this");
@@ -38,12 +39,26 @@ contract Escrow {
         _;
     }
 
+    modifier onlyDisputeContract() {
+        require(
+            msg.sender == disputeContract,
+            "Only the dispute contract can call this"
+        );
+        _;
+    }
+
     event Refunded(uint amount);
     event Deposited(uint totalAmount, uint milestoneCount);
     event MilestoneSubmitted(uint milestoneIndex);
     event MilestoneApproved(uint milestoneIndex, uint amountPaid);
     event RequirementHashUpdated(bytes32 newHash);
     event RiskCategoryUpdated(uint newRiskCategory);
+    event DisputeContractSet(address disputeContract);
+    event DisputeResolved(
+        uint milestoneIndex,
+        bool releasedToFreelancer,
+        uint amount
+    );
 
     constructor(
         address _client,
@@ -141,5 +156,37 @@ contract Escrow {
         require(newRiskCategory <= 2, "Invalid risk category");
         riskCategory = newRiskCategory;
         emit RiskCategoryUpdated(newRiskCategory);
+    }
+
+    function setDisputeContract(address _disputeContract) public onlyOracle {
+        require(disputeContract == address(0), "Dispute contract already set");
+        require(
+            _disputeContract != address(0),
+            "Invalid dispute contract address"
+        );
+        disputeContract = _disputeContract;
+        emit DisputeContractSet(_disputeContract);
+    }
+
+    function resolveDisputedMilestone(
+        uint milestoneIndex,
+        bool releaseToFreelancer
+    ) public onlyDisputeContract {
+        require(milestoneIndex < milestones.length, "Invalid milestone index");
+        require(
+            milestones[milestoneIndex].status == MilestoneStatus.Submitted,
+            "Milestone must be Submitted to dispute"
+        );
+
+        uint amount = milestones[milestoneIndex].amount;
+        milestones[milestoneIndex].status = MilestoneStatus.Approved; // settled either way
+
+        address payable recipient = releaseToFreelancer
+            ? payable(freelancer)
+            : payable(client);
+        (bool success, ) = recipient.call{value: amount}("");
+        require(success, "Dispute payout transfer failed");
+
+        emit DisputeResolved(milestoneIndex, releaseToFreelancer, amount);
     }
 }
