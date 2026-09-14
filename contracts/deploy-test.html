@@ -1,60 +1,135 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>Escrow Deployment Test</title>
-</head>
-<body>
-  <h2>Deploy Escrow for Project</h2>
-  <button id="connectBtn">1. Connect Wallet</button>
-  <button id="deployBtn" disabled>2. Deploy Escrow</button>
-  <pre id="output"></pre>
+  <head>
+    <title>Escrow Deployment Test</title>
+  </head>
+  <body>
+    <h2>Deploy Escrow for Project</h2>
+    <button id="connectBtn">1. Connect Wallet</button>
+    <button id="deployBtn" disabled>2. Deploy Escrow</button>
+    <hr />
+    <h3>Test Submit/Approve Flow</h3>
+    <label
+      >Escrow contract address:
+      <input
+        id="contractAddr"
+        size="45"
+        value="0x1E8A39dEBAE80d565936cE4a8A60E932F409CbEd" /></label
+    ><br /><br />
+    <button id="submitBtn">3. Submit Milestone 0 (as Freelancer)</button>
+    <button id="approveBtn">4. Approve Milestone 0 (as Client)</button>
+    <hr />
+    <h3>Test Dispute Voting</h3>
+    <label
+      >Dispute contract:
+      <input
+        id="disputeAddr"
+        size="45"
+        value="0xbA0294c11254A1A42981D6331a04EcCfeF842264" /></label
+    ><br /><br />
+    <label>Dispute ID: <input id="disputeId" size="5" value="0" /></label
+    ><br /><br />
+    <button id="voteFreelancerBtn">Vote: Release to Freelancer</button>
+    <button id="voteClientBtn">Vote: Refund Client</button>
+    <pre id="output"></pre>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
-  <script>
-    const PROJECT_ID = "6aa136b59fc95bc85b94d95e"; // hardcoded for this test
-    const BACKEND_URL = "http://localhost:3000";
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+    <script>
+      const PROJECT_ID = "6aa136b59fc95bc85b94d95e"; // hardcoded for this test
+      const BACKEND_URL = "http://localhost:3000";
 
-    let provider, signer;
-    const output = document.getElementById("output");
-    const log = (msg) => (output.textContent += msg + "\n");
+      let provider, signer;
+      const output = document.getElementById("output");
+      const log = (msg) => (output.textContent += msg + "\n");
 
-    document.getElementById("connectBtn").onclick = async () => {
-      if (!window.ethereum) return log("MetaMask not found!");
-      provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = await provider.getSigner();
-      log("Connected: " + (await signer.getAddress()));
-      document.getElementById("deployBtn").disabled = false;
-    };
+      document.getElementById("connectBtn").onclick = async () => {
+        if (!window.ethereum) return log("MetaMask not found!");
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+        log("Connected: " + (await signer.getAddress()));
+        document.getElementById("deployBtn").disabled = false;
+      };
 
-    document.getElementById("deployBtn").onclick = async () => {
-      log("Fetching deployment params from backend...");
-      const res = await fetch(`${BACKEND_URL}/projects/${PROJECT_ID}/deployment-params`);
-      const params = await res.json();
+      document.getElementById("deployBtn").onclick = async () => {
+        log("Fetching deployment params from backend...");
+        const res = await fetch(
+          `${BACKEND_URL}/projects/${PROJECT_ID}/deployment-params`,
+        );
+        const params = await res.json();
 
-      if (params.error) return log("Backend error: " + params.error);
+        if (params.error) return log("Backend error: " + params.error);
 
-      log("Deploying contract... confirm in MetaMask");
-      const factory = new ethers.ContractFactory(params.abi, params.bytecode, signer);
+        log("Deploying contract... confirm in MetaMask");
+        const factory = new ethers.ContractFactory(
+          params.abi,
+          params.bytecode,
+          signer,
+        );
 
-      const contract = await factory.deploy(...params.constructorArgs, {
-        value: params.totalValueWei,
-      });
+        const contract = await factory.deploy(...params.constructorArgs, {
+          value: params.totalValueWei,
+        });
 
-      log("Transaction sent, waiting for confirmation...");
-      await contract.waitForDeployment();
+        log("Transaction sent, waiting for confirmation...");
+        await contract.waitForDeployment();
 
-      const address = await contract.getAddress();
-      log("Deployed at: " + address);
+        const address = await contract.getAddress();
+        log("Deployed at: " + address);
 
-      // Save the address back to MongoDB
-      await fetch(`${BACKEND_URL}/projects/${PROJECT_ID}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ escrowContractAddress: address }),
-      });
-      log("Saved to database.");
-    };
-  </script>
-</body>
+        // Save the address back to MongoDB
+        await fetch(`${BACKEND_URL}/projects/${PROJECT_ID}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ escrowContractAddress: address }),
+        });
+        log("Saved to database.");
+      };
+      // Minimal ABI -- only the two functions we need for this test
+      const ESCROW_ABI = [
+        "function submitMilestone(uint256 milestoneIndex) public",
+        "function approveMilestone(uint256 milestoneIndex) public",
+        "function milestones(uint256) public view returns (uint256 amount, uint8 status)",
+      ];
+
+      document.getElementById("submitBtn").onclick = async () => {
+        const addr = document.getElementById("contractAddr").value;
+        const contract = new ethers.Contract(addr, ESCROW_ABI, signer);
+        log("Submitting milestone 0... confirm in MetaMask");
+        const tx = await contract.submitMilestone(0);
+        await tx.wait();
+        log("Milestone 0 submitted.");
+      };
+
+      document.getElementById("approveBtn").onclick = async () => {
+        const addr = document.getElementById("contractAddr").value;
+        const contract = new ethers.Contract(addr, ESCROW_ABI, signer);
+        log("Approving milestone 0... confirm in MetaMask");
+        const tx = await contract.approveMilestone(0);
+        await tx.wait();
+        log("Milestone 0 approved -- funds should now be with the freelancer.");
+      };
+      const DISPUTE_ABI = [
+        "function castVote(uint256 disputeId, bool voteForFreelancer) public",
+      ];
+
+      async function castVote(voteForFreelancer) {
+        const addr = document.getElementById("disputeAddr").value;
+        const id = document.getElementById("disputeId").value;
+        const contract = new ethers.Contract(addr, DISPUTE_ABI, signer);
+        log(
+          `Casting vote (${
+            voteForFreelancer ? "freelancer" : "client"
+          })... confirm in MetaMask`,
+        );
+        const tx = await contract.castVote(id, voteForFreelancer);
+        await tx.wait();
+        log("Vote cast.");
+      }
+
+      document.getElementById("voteFreelancerBtn").onclick = () =>
+        castVote(true);
+      document.getElementById("voteClientBtn").onclick = () => castVote(false);
+    </script>
+  </body>
 </html>

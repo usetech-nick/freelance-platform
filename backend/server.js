@@ -50,19 +50,6 @@ app.post("/users", async (req, res) => {
   }
 });
 
-app.post("/test-user", async (req, res) => {
-  const user = await User.create({
-    name: "Test Freelancer",
-    email: "test@example.com",
-    role: "freelancer",
-    completedContracts: 8,
-    failedContracts: 2,
-    disputeCount: 1,
-    ratings: [4, 5, 4.5],
-  });
-  res.json(user);
-});
-
 app.post("/projects", async (req, res) => {
   try {
     const project = await Project.create(req.body);

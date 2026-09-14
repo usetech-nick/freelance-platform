@@ -1,3 +1,4 @@
 {
-  "EscrowModule#Escrow": "0x7427F275bf477B8FEdD542217331295a3Ea6eb2F"
+  "EscrowModule#Escrow": "0x7427F275bf477B8FEdD542217331295a3Ea6eb2F",
+  "DisputeModule#Dispute": "0xbA0294c11254A1A42981D6331a04EcCfeF842264"
 }
