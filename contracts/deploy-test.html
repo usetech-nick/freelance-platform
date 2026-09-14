@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Escrow Deployment Test</title>
+</head>
+<body>
+  <h2>Deploy Escrow for Project</h2>
+  <button id="connectBtn">1. Connect Wallet</button>
+  <button id="deployBtn" disabled>2. Deploy Escrow</button>
+  <pre id="output"></pre>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+  <script>
+    const PROJECT_ID = "6aa136b59fc95bc85b94d95e"; // hardcoded for this test
+    const BACKEND_URL = "http://localhost:3000";
+
+    let provider, signer;
+    const output = document.getElementById("output");
+    const log = (msg) => (output.textContent += msg + "\n");
+
+    document.getElementById("connectBtn").onclick = async () => {
+      if (!window.ethereum) return log("MetaMask not found!");
+      provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = await provider.getSigner();
+      log("Connected: " + (await signer.getAddress()));
+      document.getElementById("deployBtn").disabled = false;
+    };
+
+    document.getElementById("deployBtn").onclick = async () => {
+      log("Fetching deployment params from backend...");
+      const res = await fetch(`${BACKEND_URL}/projects/${PROJECT_ID}/deployment-params`);
+      const params = await res.json();
+
+      if (params.error) return log("Backend error: " + params.error);
+
+      log("Deploying contract... confirm in MetaMask");
+      const factory = new ethers.ContractFactory(params.abi, params.bytecode, signer);
+
+      const contract = await factory.deploy(...params.constructorArgs, {
+        value: params.totalValueWei,
+      });
+
+      log("Transaction sent, waiting for confirmation...");
+      await contract.waitForDeployment();
+
+      const address = await contract.getAddress();
+      log("Deployed at: " + address);
+
+      // Save the address back to MongoDB
+      await fetch(`${BACKEND_URL}/projects/${PROJECT_ID}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escrowContractAddress: address }),
+      });
+      log("Saved to database.");
+    };
+  </script>
+</body>
+</html>

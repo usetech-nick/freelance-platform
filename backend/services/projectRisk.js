@@ -69,9 +69,9 @@ function calculateProjectRisk({ V, T, C, Q, P }) {
  * Turns the 0-1 ProjectRisk number into Low/Medium/High.
  */
 function riskCategory(R) {
-  if (R < 0.33) return 'Low';
-  if (R < 0.66) return 'Medium';
-  return 'High';
+  if (R < 0.33) return "Low";
+  if (R < 0.66) return "Medium";
+  return "High";
 }
 
 /**
@@ -94,6 +94,15 @@ function milestoneCount(category) {
   const table = { Low: 2, Medium: 3, High: 4 };
   return table[category];
 }
+/**
+ * Splits the total exposure limit into N equal milestone amounts.
+ * Simple equal-split for MVP; could be weighted differently later
+ * (e.g. smaller first milestone for high-risk projects).
+ */
+function milestoneSizes(exposureLimitValue, count) {
+  const base = exposureLimitValue / count;
+  return Array(count).fill(Number(base.toFixed(2)));
+}
 
 module.exports = {
   projectValueRisk,
@@ -104,5 +113,6 @@ module.exports = {
   calculateProjectRisk,
   riskCategory,
   exposureLimit,
-  milestoneCount
+  milestoneCount,
+  milestoneSizes,
 };
