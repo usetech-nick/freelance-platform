@@ -292,6 +292,30 @@ app.get("/users/:id/projects", async (req, res) => {
   }
 });
 
+const { raiseDisputeOnChain } = require("./services/oracleBlockchain");
+
+app.post("/projects/:id/raise-dispute", async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project.escrowContractAddress)
+      return res.status(400).json({ error: "No escrow deployed yet" });
+
+    const { milestoneIndex } = req.body;
+    const { disputeId, txHash } = await raiseDisputeOnChain(
+      project.escrowContractAddress,
+      milestoneIndex,
+    );
+
+    project.activeDispute = { milestoneIndex, disputeId, raisedAt: new Date() };
+    await project.save();
+
+    res.json({ disputeId, txHash });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () =>
   console.log(`Server running on http://localhost:${PORT}`),
 );

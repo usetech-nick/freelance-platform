@@ -1,6 +1,9 @@
 module.exports = {
-  // MVP conversion rate: purely for demo purposes on testnet.
-  // Real production version would integrate a payment gateway or stablecoin,
-  // not a hardcoded budget->ETH rate.
-  BUDGET_TO_ETH_RATE: 0.001 / 1000, // 1000 budget units = 0.001 ETH
+  BUDGET_TO_ETH_RATE: 0.001 / 1000,
+  DISPUTE_CONTRACT_ADDRESS: "0xbA0294c11254A1A42981D6331a04EcCfeF842264",
+  VERIFIERS: [
+    "0xDA53c57483A51399f714C674C675f8d661fE9cA6",
+    "0xBa47e73C0Dcc0f2b791d03BfFB7b5fC5385c6fFE",
+    "0xc5FbE6eb292bDb29A0449cc5C7DF049d8eaAaa68",
+  ],
 };

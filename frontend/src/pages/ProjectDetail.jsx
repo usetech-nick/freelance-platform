@@ -6,20 +6,27 @@ import {
   approveMilestone,
   refundProject,
   getMilestones,
+  deployEscrow,
+  updateRequirementHashOnChain,
+  getDisputeStatus,
+  castDisputeVote,
 } from "../escrow.js";
 
 const BACKEND_URL = "http://localhost:3000";
 const STATUS_LABELS = ["Pending", "Submitted", "Approved"];
+const DISPUTE_CONTRACT_ADDRESS = "0xbA0294c11254A1A42981D6331a04EcCfeF842264";
 
 export default function ProjectDetail() {
   const { id } = useParams();
-  const { user, signer } = useAuth();
+  const { user, signer, walletAddress, connectWallet } = useAuth();
   const [project, setProject] = useState(null);
   const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState(null);
   const [actionStatus, setActionStatus] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [newRequirements, setNewRequirements] = useState("");
+  const [disputeStatus, setDisputeStatus] = useState(null);
 
   async function loadProject() {
     const res = await fetch(`${BACKEND_URL}/projects/${id}`);
@@ -35,6 +42,15 @@ export default function ProjectDetail() {
     if (!data.freelancer) {
       const appsRes = await fetch(`${BACKEND_URL}/projects/${id}/applications`);
       setApplications(await appsRes.json());
+    }
+
+    if (data.activeDispute?.disputeId !== undefined && signer) {
+      const status = await getDisputeStatus(
+        DISPUTE_CONTRACT_ADDRESS,
+        data.activeDispute.disputeId,
+        signer,
+      );
+      setDisputeStatus(status);
     }
   }
 
@@ -80,6 +96,51 @@ export default function ProjectDetail() {
       setActionStatus(null);
     }
   }
+  async function handleAssessRisk() {
+    setActionError(null);
+    setActionStatus("Assessing risk...");
+    try {
+      const res = await fetch(`${BACKEND_URL}/projects/${project._id}/assess`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setActionStatus(`Risk assessed: ${data.riskCategory}`);
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
+  async function handleDeployEscrow() {
+    setActionError(null);
+    setActionStatus("Fetching deployment parameters...");
+    try {
+      const paramsRes = await fetch(
+        `${BACKEND_URL}/projects/${project._id}/deployment-params`,
+      );
+      const params = await paramsRes.json();
+      if (!paramsRes.ok) throw new Error(params.error);
+
+      setActionStatus("Deploying contract... confirm in MetaMask");
+      const address = await deployEscrow(params, signer);
+
+      setActionStatus("Saving contract address...");
+      await fetch(`${BACKEND_URL}/projects/${project._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escrowContractAddress: address }),
+      });
+
+      setActionStatus(`Escrow deployed at ${address}`);
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
   async function handleAccept(applicationId) {
     setActionError(null);
     try {
@@ -96,6 +157,83 @@ export default function ProjectDetail() {
     }
   }
 
+  async function handleUpdateRequirements() {
+    setActionError(null);
+    setActionStatus("Updating requirements...");
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/projects/${project._id}/requirements`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requirementsText: newRequirements }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (project.escrowContractAddress) {
+        setActionStatus(
+          "Syncing new requirement hash on-chain... confirm in MetaMask",
+        );
+        await updateRequirementHashOnChain(
+          project.escrowContractAddress,
+          signer,
+          data.requirementHash,
+        );
+      }
+
+      setActionStatus(
+        `Requirements updated. Scope changes: ${data.scopeChangeCount}`,
+      );
+      setNewRequirements("");
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
+  async function handleRaiseDispute(index) {
+    setActionError(null);
+    setActionStatus(`Raising dispute for milestone ${index}...`);
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/projects/${project._id}/raise-dispute`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ milestoneIndex: index }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setActionStatus(`Dispute raised (ID ${data.disputeId})`);
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
+  async function handleVote(voteForFreelancer) {
+    setActionError(null);
+    setActionStatus("Casting vote... confirm in MetaMask");
+    try {
+      await castDisputeVote(
+        DISPUTE_CONTRACT_ADDRESS,
+        project.activeDispute.disputeId,
+        signer,
+        voteForFreelancer,
+      );
+      setActionStatus("Vote cast.");
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
   if (loading) return <p>Loading...</p>;
   if (!project) return <p>Project not found.</p>;
 
@@ -105,6 +243,12 @@ export default function ProjectDetail() {
   return (
     <div>
       <Link to="/">← Back to projects</Link>
+      {!walletAddress && (
+        <div>
+          <p>Connect your wallet to view full project details.</p>
+          <button onClick={connectWallet}>Connect Wallet</button>
+        </div>
+      )}
       <h2>{project.title}</h2>
       <p>Budget: {project.budget}</p>
       <p>Complexity: {project.complexity}</p>
@@ -112,6 +256,25 @@ export default function ProjectDetail() {
         Your role on this project:{" "}
         {isClient ? "Client" : isFreelancer ? "Freelancer" : "Unknown"}
       </p>
+      {isClient && (
+        <div>
+          <h3>Requirements</h3>
+          <p>Current: {project.requirementsText}</p>
+          <p>Scope changes so far: {project.scopeChangeCount}</p>
+          <textarea
+            placeholder="Propose new requirements"
+            value={newRequirements}
+            onChange={(e) => setNewRequirements(e.target.value)}
+          />
+          <br />
+          <button
+            onClick={handleUpdateRequirements}
+            disabled={!newRequirements}
+          >
+            Update Requirements
+          </button>
+        </div>
+      )}
       {isClient && !project.freelancer && (
         <div>
           <h3>Applications ({applications.length})</h3>
@@ -142,6 +305,20 @@ export default function ProjectDetail() {
         </div>
       )}
 
+      {isClient &&
+        project.freelancer &&
+        !project.lastRiskAssessment?.computedAt && (
+          <button onClick={handleAssessRisk}>Assess Risk</button>
+        )}
+
+      {isClient &&
+        project.freelancer &&
+        project.lastRiskAssessment?.computedAt &&
+        !project.escrowContractAddress && (
+          <button onClick={handleDeployEscrow}>
+            Deploy Escrow (Fund Project)
+          </button>
+        )}
       {project.escrowContractAddress ? (
         <div>
           <h3>Milestones</h3>
@@ -158,9 +335,33 @@ export default function ProjectDetail() {
                     Approve & Pay
                   </button>
                 )}
+                {(isClient || isFreelancer) &&
+                  m.status === 1 &&
+                  !project.activeDispute && (
+                    <button onClick={() => handleRaiseDispute(m.index)}>
+                      Raise Dispute
+                    </button>
+                  )}
               </li>
             ))}
           </ul>
+          {project.activeDispute &&
+            disputeStatus &&
+            !disputeStatus.resolved && (
+              <div>
+                <h3>Active Dispute (ID {project.activeDispute.disputeId})</h3>
+                <p>
+                  Votes for freelancer: {disputeStatus.freelancerVotes} / Votes
+                  for client: {disputeStatus.clientVotes}
+                </p>
+                <button onClick={() => handleVote(true)}>
+                  Vote: Release to Freelancer
+                </button>
+                <button onClick={() => handleVote(false)}>
+                  Vote: Refund Client
+                </button>
+              </div>
+            )}
           {isClient && (
             <button onClick={handleRefund}>
               Request Refund (remaining milestones)

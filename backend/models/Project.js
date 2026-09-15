@@ -7,6 +7,11 @@ const projectSchema = new mongoose.Schema({
   requirementHash: { type: String },
   client: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   freelancer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  activeDispute: {
+    milestoneIndex: Number,
+    disputeId: Number,
+    raisedAt: Date,
+  },
 
   budget: { type: Number, required: true },
   deadline: { type: Date, required: true },
