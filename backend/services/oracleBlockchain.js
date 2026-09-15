@@ -1,6 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const { ethers } = require("ethers");
+
+const escrowArtifactPath = path.join(
+  __dirname,
+  "../../contracts/artifacts/contracts/Escrow.sol/Escrow.json",
+);
+const escrowArtifact = JSON.parse(fs.readFileSync(escrowArtifactPath, "utf8"));
+
 const {
   DISPUTE_CONTRACT_ADDRESS,
   VERIFIERS,
@@ -13,6 +20,13 @@ const disputeArtifactPath = path.join(
 const disputeArtifact = JSON.parse(
   fs.readFileSync(disputeArtifactPath, "utf8"),
 );
+
+async function linkDisputeContract(escrowAddress) {
+  const wallet = getOracleWallet();
+  const escrow = new ethers.Contract(escrowAddress, escrowArtifact.abi, wallet);
+  const tx = await escrow.setDisputeContract(DISPUTE_CONTRACT_ADDRESS);
+  await tx.wait();
+}
 
 function getOracleWallet() {
   const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
@@ -53,4 +67,4 @@ async function raiseDisputeOnChain(escrowAddress, milestoneIndex) {
   return { disputeId, txHash: receipt.hash };
 }
 
-module.exports = { raiseDisputeOnChain };
+module.exports = { raiseDisputeOnChain, linkDisputeContract };

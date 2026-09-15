@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
+
 const BACKEND_URL = "http://localhost:3000";
 const AuthContext = createContext(null);
 

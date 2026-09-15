@@ -113,6 +113,11 @@ export default function ProjectDetail() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ escrowContractAddress: address }),
       });
+      setActionStatus("Linking dispute contract...");
+      await fetch(
+        `${BACKEND_URL}/projects/${project._id}/link-dispute-contract`,
+        { method: "POST" },
+      );
       setActionStatus(`Escrow deployed at ${address}`);
     });
 

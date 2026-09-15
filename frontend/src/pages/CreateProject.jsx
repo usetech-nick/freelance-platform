@@ -61,7 +61,7 @@ export default function CreateProject() {
         onChange={(e) => update("requirementsText", e.target.value)}
       />
       <input
-        placeholder="Budget"
+        placeholder="Budget (₹)"
         type="number"
         value={form.budget}
         onChange={(e) => update("budget", e.target.value)}

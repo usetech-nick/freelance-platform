@@ -292,8 +292,10 @@ app.get("/users/:id/projects", async (req, res) => {
   }
 });
 
-const { raiseDisputeOnChain } = require("./services/oracleBlockchain");
-
+const {
+  raiseDisputeOnChain,
+  linkDisputeContract,
+} = require("./services/oracleBlockchain");
 app.post("/projects/:id/raise-dispute", async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
@@ -311,6 +313,18 @@ app.post("/projects/:id/raise-dispute", async (req, res) => {
     await project.save();
 
     res.json({ disputeId, txHash });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/projects/:id/link-dispute-contract", async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project?.escrowContractAddress)
+      return res.status(400).json({ error: "No escrow deployed yet" });
+    await linkDisputeContract(project.escrowContractAddress);
+    res.json({ message: "Linked successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
