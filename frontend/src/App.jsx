@@ -5,10 +5,10 @@ import BrowseProjects from "./pages/BrowseProjects.jsx";
 
 function App() {
   return (
-    <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>Freelance Platform</h1>
-      <nav style={{ marginBottom: "1rem" }}>
-        <Link to="/">My Projects</Link> |{" "}
+    <div className="app-shell">
+      <div className="app-title">Freelance Platform</div>
+      <nav className="nav">
+        <Link to="/">My Projects</Link>
         <Link to="/browse">Browse Open Projects</Link>
       </nav>
       <Routes>

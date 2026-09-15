@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../AuthContext.jsx";
+import { riskBadgeClass } from "../badges.js";
 
 const BACKEND_URL = "http://localhost:3000";
 
@@ -19,40 +20,56 @@ export default function ProjectList() {
     return (
       <div>
         <button onClick={connectWallet}>Connect Wallet</button>
-        {error && <p style={{ color: "red" }}>{error}</p>}
+        {error && <p className="error-msg">{error}</p>}
       </div>
     );
   }
 
   return (
     <div>
-      <p>Connected: {walletAddress}</p>
+      <p className="card-meta">Connected: {walletAddress}</p>
       {user ? (
         <p>
-          Logged in as <strong>{user.name}</strong> ({user.role})
+          Logged in as <strong>{user.name}</strong>
+          <span className="badge badge-role">{user.role}</span>
         </p>
       ) : (
-        <p style={{ color: "red" }}>{error}</p>
+        <p className="error-msg">{error}</p>
       )}
 
-      <h2>Your Projects</h2>
-      {projects.length === 0 && <p>No projects yet.</p>}
-      <ul>
+      <section>
+        <h3>Your Projects</h3>
+        {projects.length === 0 && <p className="card-meta">No projects yet.</p>}
         {projects.map((p) => {
           const isClient = p.client._id === user._id;
           return (
-            <li key={p._id}>
-              <Link to={`/projects/${p._id}`}>
-                <strong>{p.title}</strong>
-              </Link>{" "}
-              — you are the {isClient ? "client" : "freelancer"}
-              {p.lastRiskAssessment?.riskCategory && (
-                <span> — Risk: {p.lastRiskAssessment.riskCategory}</span>
-              )}
-            </li>
+            <Link
+              to={`/projects/${p._id}`}
+              key={p._id}
+              style={{ display: "block" }}
+            >
+              <div className="card">
+                <p className="card-title">
+                  {p.title}
+                  {p.lastRiskAssessment?.riskCategory && (
+                    <span
+                      className={riskBadgeClass(
+                        p.lastRiskAssessment.riskCategory,
+                      )}
+                    >
+                      {p.lastRiskAssessment.riskCategory} risk
+                    </span>
+                  )}
+                </p>
+                <p className="card-meta">
+                  You are the {isClient ? "client" : "freelancer"} — Budget:{" "}
+                  {p.budget}
+                </p>
+              </div>
+            </Link>
           );
         })}
-      </ul>
+      </section>
     </div>
   );
 }

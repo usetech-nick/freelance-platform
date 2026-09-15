@@ -11,6 +11,7 @@ import {
   getDisputeStatus,
   castDisputeVote,
 } from "../escrow.js";
+import { riskBadgeClass, statusBadgeClass } from "../badges.js";
 
 const BACKEND_URL = "http://localhost:3000";
 const STATUS_LABELS = ["Pending", "Submitted", "Approved"];
@@ -21,12 +22,12 @@ export default function ProjectDetail() {
   const { user, signer, walletAddress, connectWallet } = useAuth();
   const [project, setProject] = useState(null);
   const [milestones, setMilestones] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [disputeStatus, setDisputeStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState(null);
   const [actionStatus, setActionStatus] = useState(null);
-  const [applications, setApplications] = useState([]);
   const [newRequirements, setNewRequirements] = useState("");
-  const [disputeStatus, setDisputeStatus] = useState(null);
 
   async function loadProject() {
     const res = await fetch(`${BACKEND_URL}/projects/${id}`);
@@ -38,12 +39,10 @@ export default function ProjectDetail() {
       const ms = await getMilestones(data.escrowContractAddress, signer);
       setMilestones(ms);
     }
-
     if (!data.freelancer) {
       const appsRes = await fetch(`${BACKEND_URL}/projects/${id}/applications`);
       setApplications(await appsRes.json());
     }
-
     if (data.activeDispute?.disputeId !== undefined && signer) {
       const status = await getDisputeStatus(
         DISPUTE_CONTRACT_ADDRESS,
@@ -56,111 +55,69 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     loadProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, signer]);
 
-  async function handleSubmit(index) {
+  async function withStatus(startMsg, fn) {
     setActionError(null);
-    setActionStatus(`Submitting milestone ${index}... confirm in MetaMask`);
+    setActionStatus(startMsg);
     try {
-      await submitMilestone(project.escrowContractAddress, signer, index);
+      await fn();
+      await loadProject();
+    } catch (err) {
+      setActionError(err.message);
+      setActionStatus(null);
+    }
+  }
+
+  const handleSubmit = (i) =>
+    withStatus(`Submitting milestone ${i}... confirm in MetaMask`, async () => {
+      await submitMilestone(project.escrowContractAddress, signer, i);
       setActionStatus("Submitted successfully.");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleApprove(index) {
-    setActionError(null);
-    setActionStatus(`Approving milestone ${index}... confirm in MetaMask`);
-    try {
-      await approveMilestone(project.escrowContractAddress, signer, index);
+  const handleApprove = (i) =>
+    withStatus(`Approving milestone ${i}... confirm in MetaMask`, async () => {
+      await approveMilestone(project.escrowContractAddress, signer, i);
       setActionStatus("Approved and paid successfully.");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleRefund() {
-    setActionError(null);
-    setActionStatus("Requesting refund... confirm in MetaMask");
-    try {
+  const handleRefund = () =>
+    withStatus("Requesting refund... confirm in MetaMask", async () => {
       await refundProject(project.escrowContractAddress, signer);
       setActionStatus("Refund processed.");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
-  async function handleAssessRisk() {
-    setActionError(null);
-    setActionStatus("Assessing risk...");
-    try {
+    });
+
+  const handleAssessRisk = () =>
+    withStatus("Assessing risk...", async () => {
       const res = await fetch(`${BACKEND_URL}/projects/${project._id}/assess`, {
         method: "POST",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setActionStatus(`Risk assessed: ${data.riskCategory}`);
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleDeployEscrow() {
-    setActionError(null);
-    setActionStatus("Fetching deployment parameters...");
-    try {
+  const handleDeployEscrow = () =>
+    withStatus("Fetching deployment parameters...", async () => {
       const paramsRes = await fetch(
         `${BACKEND_URL}/projects/${project._id}/deployment-params`,
       );
       const params = await paramsRes.json();
       if (!paramsRes.ok) throw new Error(params.error);
-
       setActionStatus("Deploying contract... confirm in MetaMask");
       const address = await deployEscrow(params, signer);
-
       setActionStatus("Saving contract address...");
       await fetch(`${BACKEND_URL}/projects/${project._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ escrowContractAddress: address }),
       });
-
       setActionStatus(`Escrow deployed at ${address}`);
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleAccept(applicationId) {
-    setActionError(null);
-    try {
-      const res = await fetch(
-        `${BACKEND_URL}/applications/${applicationId}/accept`,
-        { method: "POST" },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setActionStatus("Freelancer assigned.");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  }
-
-  async function handleUpdateRequirements() {
-    setActionError(null);
-    setActionStatus("Updating requirements...");
-    try {
+  const handleUpdateRequirements = () =>
+    withStatus("Updating requirements...", async () => {
       const res = await fetch(
         `${BACKEND_URL}/projects/${project._id}/requirements`,
         {
@@ -171,7 +128,6 @@ export default function ProjectDetail() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       if (project.escrowContractAddress) {
         setActionStatus(
           "Syncing new requirement hash on-chain... confirm in MetaMask",
@@ -182,22 +138,25 @@ export default function ProjectDetail() {
           data.requirementHash,
         );
       }
-
       setActionStatus(
         `Requirements updated. Scope changes: ${data.scopeChangeCount}`,
       );
       setNewRequirements("");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleRaiseDispute(index) {
-    setActionError(null);
-    setActionStatus(`Raising dispute for milestone ${index}...`);
-    try {
+  const handleAccept = (applicationId) =>
+    withStatus("Assigning freelancer...", async () => {
+      const res = await fetch(
+        `${BACKEND_URL}/applications/${applicationId}/accept`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setActionStatus("Freelancer assigned.");
+    });
+
+  const handleRaiseDispute = (index) =>
+    withStatus(`Raising dispute for milestone ${index}...`, async () => {
       const res = await fetch(
         `${BACKEND_URL}/projects/${project._id}/raise-dispute`,
         {
@@ -209,17 +168,10 @@ export default function ProjectDetail() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setActionStatus(`Dispute raised (ID ${data.disputeId})`);
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  async function handleVote(voteForFreelancer) {
-    setActionError(null);
-    setActionStatus("Casting vote... confirm in MetaMask");
-    try {
+  const handleVote = (voteForFreelancer) =>
+    withStatus("Casting vote... confirm in MetaMask", async () => {
       await castDisputeVote(
         DISPUTE_CONTRACT_ADDRESS,
         project.activeDispute.disputeId,
@@ -227,15 +179,10 @@ export default function ProjectDetail() {
         voteForFreelancer,
       );
       setActionStatus("Vote cast.");
-      await loadProject();
-    } catch (err) {
-      setActionError(err.message);
-      setActionStatus(null);
-    }
-  }
+    });
 
-  if (loading) return <p>Loading...</p>;
-  if (!project) return <p>Project not found.</p>;
+  if (loading) return <p className="card-meta">Loading...</p>;
+  if (!project) return <p className="error-msg">Project not found.</p>;
 
   const isClient = project.client === user?._id;
   const isFreelancer = project.freelancer === user?._id;
@@ -243,66 +190,86 @@ export default function ProjectDetail() {
   return (
     <div>
       <Link to="/">← Back to projects</Link>
+
       {!walletAddress && (
-        <div>
+        <div className="card">
           <p>Connect your wallet to view full project details.</p>
           <button onClick={connectWallet}>Connect Wallet</button>
         </div>
       )}
-      <h2>{project.title}</h2>
-      <p>Budget: {project.budget}</p>
-      <p>Complexity: {project.complexity}</p>
-      <p>
-        Your role on this project:{" "}
-        {isClient ? "Client" : isFreelancer ? "Freelancer" : "Unknown"}
+
+      <h2 style={{ marginBottom: "0.2rem" }}>{project.title}</h2>
+      <p className="card-meta">
+        Budget: {project.budget} — Complexity: {project.complexity} — Your role:{" "}
+        <span className="badge badge-role">
+          {isClient ? "Client" : isFreelancer ? "Freelancer" : "Unknown"}
+        </span>
       </p>
+
       {isClient && (
-        <div>
+        <section className="card">
           <h3>Requirements</h3>
-          <p>Current: {project.requirementsText}</p>
-          <p>Scope changes so far: {project.scopeChangeCount}</p>
+          <p className="card-meta">Current: {project.requirementsText}</p>
+          <p className="card-meta">
+            Scope changes so far: {project.scopeChangeCount}
+          </p>
           <textarea
             placeholder="Propose new requirements"
             value={newRequirements}
             onChange={(e) => setNewRequirements(e.target.value)}
           />
-          <br />
           <button
             onClick={handleUpdateRequirements}
             disabled={!newRequirements}
           >
             Update Requirements
           </button>
-        </div>
+        </section>
       )}
+
       {isClient && !project.freelancer && (
-        <div>
+        <section className="card">
           <h3>Applications ({applications.length})</h3>
-          {applications.length === 0 && <p>No applications yet.</p>}
-          <ul>
-            {applications.map((a) => (
-              <li key={a._id}>
-                <strong>{a.freelancer.name}</strong> ({a.freelancer.email}) —{" "}
-                {a.status}
-                {a.message && <p>"{a.message}"</p>}
-                {a.status === "pending" && (
-                  <button onClick={() => handleAccept(a._id)}>Accept</button>
+          {applications.length === 0 && (
+            <p className="card-meta">No applications yet.</p>
+          )}
+          {applications.map((a) => (
+            <div key={a._id} style={{ marginBottom: "0.75rem" }}>
+              <strong>{a.freelancer.name}</strong> ({a.freelancer.email})
+              <span
+                className={statusBadgeClass(
+                  a.status === "accepted" ? 2 : a.status === "rejected" ? 0 : 1,
                 )}
-              </li>
-            ))}
-          </ul>
-        </div>
+              >
+                {a.status}
+              </span>
+              {a.message && <p className="card-meta">"{a.message}"</p>}
+              {a.status === "pending" && (
+                <button onClick={() => handleAccept(a._id)}>Accept</button>
+              )}
+            </div>
+          ))}
+        </section>
       )}
 
       {project.lastRiskAssessment?.riskCategory && (
-        <div>
+        <section className="card">
           <h3>Risk Assessment</h3>
-          <p>Category: {project.lastRiskAssessment.riskCategory}</p>
           <p>
+            Category:{" "}
+            <span
+              className={riskBadgeClass(
+                project.lastRiskAssessment.riskCategory,
+              )}
+            >
+              {project.lastRiskAssessment.riskCategory}
+            </span>
+          </p>
+          <p className="card-meta">
             Exposure Limit:{" "}
             {project.lastRiskAssessment.exposureLimit?.toFixed(2)}
           </p>
-        </div>
+        </section>
       )}
 
       {isClient &&
@@ -319,14 +286,20 @@ export default function ProjectDetail() {
             Deploy Escrow (Fund Project)
           </button>
         )}
+
       {project.escrowContractAddress ? (
-        <div>
+        <section className="card">
           <h3>Milestones</h3>
-          <ul>
-            {milestones.map((m) => (
-              <li key={m.index}>
-                Milestone {m.index}: {STATUS_LABELS[m.status]} — amount (wei):{" "}
-                {m.amount}
+          {milestones.map((m) => (
+            <div className="milestone-row" key={m.index}>
+              <span>
+                Milestone {m.index}
+                <span className={statusBadgeClass(m.status)}>
+                  {STATUS_LABELS[m.status]}
+                </span>
+                <span className="card-meta"> {m.amount} wei</span>
+              </span>
+              <span>
                 {isFreelancer && m.status === 0 && (
                   <button onClick={() => handleSubmit(m.index)}>Submit</button>
                 )}
@@ -338,42 +311,57 @@ export default function ProjectDetail() {
                 {(isClient || isFreelancer) &&
                   m.status === 1 &&
                   !project.activeDispute && (
-                    <button onClick={() => handleRaiseDispute(m.index)}>
+                    <button
+                      className="secondary"
+                      onClick={() => handleRaiseDispute(m.index)}
+                    >
                       Raise Dispute
                     </button>
                   )}
-              </li>
-            ))}
-          </ul>
-          {project.activeDispute &&
-            disputeStatus &&
-            !disputeStatus.resolved && (
-              <div>
-                <h3>Active Dispute (ID {project.activeDispute.disputeId})</h3>
-                <p>
-                  Votes for freelancer: {disputeStatus.freelancerVotes} / Votes
-                  for client: {disputeStatus.clientVotes}
-                </p>
-                <button onClick={() => handleVote(true)}>
-                  Vote: Release to Freelancer
-                </button>
-                <button onClick={() => handleVote(false)}>
-                  Vote: Refund Client
-                </button>
-              </div>
-            )}
+              </span>
+            </div>
+          ))}
           {isClient && (
-            <button onClick={handleRefund}>
+            <button className="danger" onClick={handleRefund}>
               Request Refund (remaining milestones)
             </button>
           )}
-        </div>
+
+          <p className="card-meta" style={{ marginTop: "0.75rem" }}>
+            Escrow contract:{" "}
+            <a
+              href={`https://sepolia.etherscan.io/address/${project.escrowContractAddress}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {project.escrowContractAddress}
+            </a>
+          </p>
+        </section>
       ) : (
-        <p>No escrow contract deployed yet for this project.</p>
+        <p className="card-meta">
+          No escrow contract deployed yet for this project.
+        </p>
       )}
 
-      {actionStatus && <p style={{ color: "blue" }}>{actionStatus}</p>}
-      {actionError && <p style={{ color: "red" }}>{actionError}</p>}
+      {project.activeDispute && disputeStatus && !disputeStatus.resolved && (
+        <section className="card">
+          <h3>Active Dispute (ID {project.activeDispute.disputeId})</h3>
+          <p className="card-meta">
+            Votes for freelancer: {disputeStatus.freelancerVotes} / Votes for
+            client: {disputeStatus.clientVotes}
+          </p>
+          <button onClick={() => handleVote(true)}>
+            Vote: Release to Freelancer
+          </button>
+          <button className="secondary" onClick={() => handleVote(false)}>
+            Vote: Refund Client
+          </button>
+        </section>
+      )}
+
+      {actionStatus && <p className="status-msg">{actionStatus}</p>}
+      {actionError && <p className="error-msg">{actionError}</p>}
     </div>
   );
 }
