@@ -279,6 +279,18 @@ app.post("/applications/:id/accept", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get("/users/:id/projects", async (req, res) => {
+  try {
+    const projects = await Project.find({
+      $or: [{ client: req.params.id }, { freelancer: req.params.id }],
+    })
+      .populate("client")
+      .populate("freelancer");
+    res.json(projects);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(PORT, () =>
   console.log(`Server running on http://localhost:${PORT}`),
