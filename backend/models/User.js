@@ -4,7 +4,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   role: { type: String, enum: ["client", "freelancer"], required: true },
-  walletAddress: { type: String, required: true },
+  walletAddress: { type: String, required: true, lowercase: true },
 
   // Fields the risk engine needs
   completedContracts: { type: Number, default: 0 }, // S

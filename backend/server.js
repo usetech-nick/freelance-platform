@@ -31,6 +31,19 @@ const PORT = 3000;
 app.get("/", (req, res) => {
   res.send("Freelance platform backend is running");
 });
+
+// Freelancers browse open projects (no freelancer assigned yet)
+app.get("/projects/open", async (req, res) => {
+  try {
+    const projects = await Project.find({
+      freelancer: { $exists: false },
+    }).populate("client");
+    res.json(projects);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/projects/:id", async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
@@ -155,6 +168,19 @@ app.get("/projects/:id/deployment-params", async (req, res) => {
   }
 });
 
+app.patch("/projects/:id", async (req, res) => {
+  try {
+    const project = await Project.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    res.json(project);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.patch("/users/:id", async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(req.params.id, req.body, {
@@ -167,16 +193,90 @@ app.patch("/users/:id", async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
-app.patch("/projects/:id", async (req, res) => {
+
+app.get("/users/by-wallet/:address", async (req, res) => {
   try {
-    const project = await Project.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
+    const user = await User.findOne({
+      walletAddress: req.params.address.toLowerCase(),
     });
-    if (!project) return res.status(404).json({ error: "Project not found" });
-    res.json(project);
+    if (!user)
+      return res
+        .status(404)
+        .json({ error: "No user found with this wallet address" });
+    res.json(user);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const Application = require("./models/Application");
+
+// Freelancer applies to an open project
+app.post("/projects/:id/applications", async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (project.freelancer)
+      return res
+        .status(400)
+        .json({ error: "Project already has a freelancer assigned" });
+
+    const application = await Application.create({
+      project: req.params.id,
+      freelancer: req.body.freelancerId,
+      message: req.body.message,
+    });
+    res.json(application);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res
+        .status(400)
+        .json({ error: "You have already applied to this project" });
+    }
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Client views all applications for their project
+app.get("/projects/:id/applications", async (req, res) => {
+  try {
+    const applications = await Application.find({
+      project: req.params.id,
+    }).populate("freelancer");
+    res.json(applications);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Client accepts one application
+app.post("/applications/:id/accept", async (req, res) => {
+  try {
+    const application = await Application.findById(req.params.id);
+    if (!application)
+      return res.status(404).json({ error: "Application not found" });
+
+    const project = await Project.findById(application.project);
+    if (project.freelancer)
+      return res
+        .status(400)
+        .json({ error: "Project already has a freelancer assigned" });
+
+    project.freelancer = application.freelancer;
+    await project.save();
+
+    application.status = "accepted";
+    await application.save();
+
+    // Reject every other pending application for this project
+    await Application.updateMany(
+      { project: application.project, _id: { $ne: application._id } },
+      { status: "rejected" },
+    );
+
+    res.json({ message: "Freelancer assigned", project });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
