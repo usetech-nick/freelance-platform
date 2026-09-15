@@ -1,5 +1,23 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import {
+  FiArrowLeft,
+  FiFileText,
+  FiUsers,
+  FiActivity,
+  FiLock,
+  FiLayers,
+  FiExternalLink,
+  FiCheck,
+  FiUpload,
+  FiAlertTriangle,
+  FiRefreshCw,
+  FiThumbsUp,
+  FiThumbsDown,
+  FiArrowUpRight,
+  FiShield,
+  FiCopy,
+} from "react-icons/fi";
 import { useAuth } from "../AuthContext.jsx";
 import {
   submitMilestone,
@@ -12,6 +30,8 @@ import {
   castDisputeVote,
 } from "../escrow.js";
 import { riskBadgeClass, statusBadgeClass } from "../badges.js";
+import { Notice, Empty } from "../components/ui.jsx";
+import { Rating, TrackRecord } from "../components/Rating.jsx";
 
 const BACKEND_URL = "http://localhost:3000";
 const STATUS_LABELS = ["Pending", "Submitted", "Approved"];
@@ -28,6 +48,7 @@ export default function ProjectDetail() {
   const [actionError, setActionError] = useState(null);
   const [actionStatus, setActionStatus] = useState(null);
   const [newRequirements, setNewRequirements] = useState("");
+  const [copied, setCopied] = useState(false);
 
   async function loadProject() {
     const res = await fetch(`${BACKEND_URL}/projects/${id}`);
@@ -186,187 +207,400 @@ export default function ProjectDetail() {
       setActionStatus("Vote cast.");
     });
 
-  if (loading) return <p className="card-meta">Loading...</p>;
-  if (!project) return <p className="error-msg">Project not found.</p>;
+  if (loading)
+    return (
+      <p className="notice busy">
+        <span className="spinner" />
+        <span>Loading project…</span>
+      </p>
+    );
+
+  if (!project)
+    return (
+      <Empty
+        title="Project not found"
+        hint="The link may be wrong, or the project was removed."
+      />
+    );
 
   const isClient = project.client === user?._id;
   const isFreelancer = project.freelancer === user?._id;
+  const votesTotal = disputeStatus
+    ? disputeStatus.freelancerVotes + disputeStatus.clientVotes
+    : 0;
 
   return (
     <div>
-      <Link to="/">← Back to projects</Link>
+      <Link to="/" className="back-link">
+        <FiArrowLeft /> All projects
+      </Link>
 
       {!walletAddress && (
         <div className="card">
-          <p>Connect your wallet to view full project details.</p>
-          <button onClick={connectWallet}>Connect Wallet</button>
+          <p style={{ marginBottom: "0.9rem" }}>
+            Connect your wallet to see milestones and on-chain actions.
+          </p>
+          <button onClick={connectWallet}>
+            Connect wallet <FiArrowUpRight />
+          </button>
         </div>
       )}
 
-      <h2 style={{ marginBottom: "0.2rem" }}>{project.title}</h2>
-      <p className="card-meta">
-        Budget: {project.budget} — Complexity: {project.complexity} — Your role:{" "}
-        <span className="badge badge-role">
-          {isClient ? "Client" : isFreelancer ? "Freelancer" : "Unknown"}
-        </span>
-      </p>
-
-      {isClient && (
-        <section className="card">
-          <h3>Requirements</h3>
-          <p className="card-meta">Current: {project.requirementsText}</p>
-          <p className="card-meta">
-            Scope changes so far: {project.scopeChangeCount}
+      <div className="page-head">
+        <div>
+          <p className="eyebrow" style={{ marginBottom: "0.6rem" }}>
+            Project
           </p>
-          <textarea
-            placeholder="Propose new requirements"
-            value={newRequirements}
-            onChange={(e) => setNewRequirements(e.target.value)}
-          />
-          <button
-            onClick={handleUpdateRequirements}
-            disabled={!newRequirements}
-          >
-            Update Requirements
-          </button>
-        </section>
-      )}
-
-      {isClient && !project.freelancer && (
-        <section className="card">
-          <h3>Applications ({applications.length})</h3>
-          {applications.length === 0 && (
-            <p className="card-meta">No applications yet.</p>
-          )}
-          {applications.map((a) => (
-            <div key={a._id} style={{ marginBottom: "0.75rem" }}>
-              <strong>{a.freelancer.name}</strong> ({a.freelancer.email})
-              <span
-                className={statusBadgeClass(
-                  a.status === "accepted" ? 2 : a.status === "rejected" ? 0 : 1,
-                )}
-              >
-                {a.status}
-              </span>
-              {a.message && <p className="card-meta">"{a.message}"</p>}
-              {a.status === "pending" && (
-                <button onClick={() => handleAccept(a._id)}>Accept</button>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
-
-      {project.lastRiskAssessment?.riskCategory && (
-        <section className="card">
-          <h3>Risk Assessment</h3>
-          <p>
-            Category:{" "}
-            <span
-              className={riskBadgeClass(
-                project.lastRiskAssessment.riskCategory,
-              )}
-            >
-              {project.lastRiskAssessment.riskCategory}
-            </span>
-          </p>
-          <p className="card-meta">
-            Exposure Limit:{" "}
-            {project.lastRiskAssessment.exposureLimit?.toFixed(2)}
-          </p>
-        </section>
-      )}
-
-      {isClient &&
-        project.freelancer &&
-        !project.lastRiskAssessment?.computedAt && (
-          <button onClick={handleAssessRisk}>Assess Risk</button>
-        )}
-
-      {isClient &&
-        project.freelancer &&
-        project.lastRiskAssessment?.computedAt &&
-        !project.escrowContractAddress && (
-          <button onClick={handleDeployEscrow}>
-            Deploy Escrow (Fund Project)
-          </button>
-        )}
-
-      {project.escrowContractAddress ? (
-        <section className="card">
-          <h3>Milestones</h3>
-          {milestones.map((m) => (
-            <div className="milestone-row" key={m.index}>
-              <span>
-                Milestone {m.index}
-                <span className={statusBadgeClass(m.status)}>
-                  {STATUS_LABELS[m.status]}
-                </span>
-                <span className="card-meta"> {m.amount} wei</span>
-              </span>
-              <span>
-                {isFreelancer && m.status === 0 && (
-                  <button onClick={() => handleSubmit(m.index)}>Submit</button>
-                )}
-                {isClient && m.status === 1 && (
-                  <button onClick={() => handleApprove(m.index)}>
-                    Approve & Pay
-                  </button>
-                )}
-                {(isClient || isFreelancer) &&
-                  m.status === 1 &&
-                  !project.activeDispute && (
-                    <button
-                      className="secondary"
-                      onClick={() => handleRaiseDispute(m.index)}
-                    >
-                      Raise Dispute
-                    </button>
-                  )}
-              </span>
-            </div>
-          ))}
-          {isClient && (
-            <button className="danger" onClick={handleRefund}>
-              Request Refund (remaining milestones)
-            </button>
-          )}
-
-          <p className="card-meta" style={{ marginTop: "0.75rem" }}>
-            Escrow contract:{" "}
-            <a
-              href={`https://sepolia.etherscan.io/address/${project.escrowContractAddress}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {project.escrowContractAddress}
-            </a>
-          </p>
-        </section>
-      ) : (
-        <p className="card-meta">
-          No escrow contract deployed yet for this project.
+          <h1>{project.title}</h1>
+        </div>
+        <p
+          className="card-meta"
+          style={{ display: "flex", gap: "0.6rem", alignItems: "center", margin: 0 }}
+        >
+          <span className="mono">Budget {project.budget}</span>
+          <span className="badge">{project.complexity}</span>
+          <span className="badge badge-role">
+            {isClient ? "You: client" : isFreelancer ? "You: freelancer" : "Viewer"}
+          </span>
         </p>
-      )}
+      </div>
 
-      {project.activeDispute && disputeStatus && !disputeStatus.resolved && (
-        <section className="card">
-          <h3>Active Dispute (ID {project.activeDispute.disputeId})</h3>
-          <p className="card-meta">
-            Votes for freelancer: {disputeStatus.freelancerVotes} / Votes for
-            client: {disputeStatus.clientVotes}
-          </p>
-          <button onClick={() => handleVote(true)}>
-            Vote: Release to Freelancer
-          </button>
-          <button className="secondary" onClick={() => handleVote(false)}>
-            Vote: Refund Client
-          </button>
-        </section>
-      )}
+      {actionStatus && <Notice tone="busy">{actionStatus}</Notice>}
+      {actionError && <Notice tone="error">{actionError}</Notice>}
 
-      {actionStatus && <p className="status-msg">{actionStatus}</p>}
-      {actionError && <p className="error-msg">{actionError}</p>}
+      <div className="split">
+        <div>
+          {isClient && (
+            <section className="card card-lg">
+              <div className="card-head">
+                <h3>
+                  <FiFileText /> Requirements
+                </h3>
+                <span className="badge">
+                  {project.scopeChangeCount} scope change
+                  {project.scopeChangeCount === 1 ? "" : "s"}
+                </span>
+              </div>
+              <p style={{ color: "var(--text-soft)" }}>
+                {project.requirementsText}
+              </p>
+              <label className="field" style={{ marginTop: "1.25rem" }}>
+                <span className="field-label">Propose new requirements</span>
+                <textarea
+                  placeholder="Rewrite the scope. The new hash is pushed on-chain so both sides share the same brief."
+                  value={newRequirements}
+                  onChange={(e) => setNewRequirements(e.target.value)}
+                />
+              </label>
+              <button
+                onClick={handleUpdateRequirements}
+                disabled={!newRequirements}
+              >
+                Update requirements <FiRefreshCw />
+              </button>
+            </section>
+          )}
+
+          {isClient && !project.freelancer && (
+            <section className="card card-lg">
+              <div className="card-head">
+                <h3>
+                  <FiUsers /> Applications
+                </h3>
+                <span className="badge">{applications.length}</span>
+              </div>
+              {applications.length === 0 ? (
+                <p className="card-meta">
+                  No applications yet. Freelancers see this project under Find
+                  work.
+                </p>
+              ) : (
+                applications.map((a) => (
+                  <div className="application-row" key={a._id}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "0.75rem",
+                        alignItems: "flex-start",
+                        minWidth: "220px",
+                        flex: 1,
+                      }}
+                    >
+                      <span className="avatar">
+                        {a.freelancer.name?.[0]?.toUpperCase()}
+                      </span>
+                      <div>
+                        <p
+                          className="card-title"
+                          style={{ fontSize: "0.98rem", marginBottom: "0.2rem" }}
+                        >
+                          {a.freelancer.name}
+                          <span
+                            className={statusBadgeClass(
+                              a.status === "accepted"
+                                ? 2
+                                : a.status === "rejected"
+                                  ? 0
+                                  : 1,
+                            )}
+                          >
+                            {a.status}
+                          </span>
+                        </p>
+                        <p className="card-meta">{a.freelancer.email}</p>
+                        <div style={{ marginTop: "0.45rem" }}>
+                          <Rating ratings={a.freelancer.ratings} size="0.9rem" />
+                          <TrackRecord user={a.freelancer} />
+                        </div>
+                        {a.message && (
+                          <p
+                            className="card-meta"
+                            style={{ color: "var(--text-soft)", marginTop: "0.4rem" }}
+                          >
+                            {a.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {a.status === "pending" && (
+                      <button className="sm" onClick={() => handleAccept(a._id)}>
+                        Accept <FiCheck />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+          )}
+
+          {project.escrowContractAddress ? (
+            <section className="card card-lg">
+              <div className="card-head">
+                <h3>
+                  <FiLayers /> Milestones
+                </h3>
+                <span className="badge">{milestones.length} total</span>
+              </div>
+
+              {milestones.length === 0 && (
+                <p className="card-meta">
+                  Connect your wallet to read milestones from the contract.
+                </p>
+              )}
+
+              {milestones.map((m) => (
+                <div className="milestone-row" key={m.index}>
+                  <span className="milestone-id">
+                    <span className="milestone-num mono">{m.index + 1}</span>
+                    <span>
+                      <span className={statusBadgeClass(m.status)}>
+                        {STATUS_LABELS[m.status]}
+                      </span>
+                      <span
+                        className="card-meta mono"
+                        style={{ display: "block", marginTop: "0.3rem" }}
+                      >
+                        {m.amount} wei
+                      </span>
+                    </span>
+                  </span>
+                  <span className="btn-row">
+                    {isFreelancer && m.status === 0 && (
+                      <button className="sm" onClick={() => handleSubmit(m.index)}>
+                        Submit work <FiUpload />
+                      </button>
+                    )}
+                    {isClient && m.status === 1 && (
+                      <button className="sm" onClick={() => handleApprove(m.index)}>
+                        Approve &amp; pay <FiCheck />
+                      </button>
+                    )}
+                    {(isClient || isFreelancer) &&
+                      m.status === 1 &&
+                      !project.activeDispute && (
+                        <button
+                          className="secondary sm"
+                          onClick={() => handleRaiseDispute(m.index)}
+                        >
+                          Raise dispute <FiAlertTriangle />
+                        </button>
+                      )}
+                  </span>
+                </div>
+              ))}
+
+              {isClient && (
+                <div style={{ marginTop: "1.25rem" }}>
+                  <button className="danger" onClick={handleRefund}>
+                    Refund remaining milestones <FiRefreshCw />
+                  </button>
+                </div>
+              )}
+
+              <p className="card-meta" style={{ marginTop: "1.25rem" }}>
+                <a
+                  className="contract-link"
+                  href={`https://sepolia.etherscan.io/address/${project.escrowContractAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <FiExternalLink />
+                  <span className="mono">{project.escrowContractAddress}</span>
+                </a>
+              </p>
+            </section>
+          ) : (
+            <Empty
+              title="No escrow yet"
+              hint="Once a freelancer is assigned and risk is scored, the client deploys the escrow to fund this project."
+            />
+          )}
+
+          {project.activeDispute && disputeStatus && !disputeStatus.resolved && (
+            <section className="card card-lg">
+              <div className="card-head">
+                <h3>
+                  <FiAlertTriangle /> Active dispute
+                </h3>
+                <span className="badge badge-pending mono">
+                  ID {project.activeDispute.disputeId}
+                </span>
+              </div>
+              <p className="card-meta">
+                {disputeStatus.freelancerVotes} for the freelancer ·{" "}
+                {disputeStatus.clientVotes} for the client
+              </p>
+              <div className="vote-bar">
+                <i
+                  className="for"
+                  style={{
+                    width: votesTotal
+                      ? `${(disputeStatus.freelancerVotes / votesTotal) * 100}%`
+                      : "0%",
+                  }}
+                />
+                <i
+                  className="against"
+                  style={{
+                    width: votesTotal
+                      ? `${(disputeStatus.clientVotes / votesTotal) * 100}%`
+                      : "0%",
+                  }}
+                />
+              </div>
+              <div className="btn-row">
+                <button onClick={() => handleVote(true)}>
+                  Release to freelancer <FiThumbsUp />
+                </button>
+                <button className="secondary" onClick={() => handleVote(false)}>
+                  Refund the client <FiThumbsDown />
+                </button>
+              </div>
+            </section>
+          )}
+        </div>
+
+        <aside>
+          <section className="card card-lg">
+            <div className="card-head">
+              <h3>
+                <FiActivity /> Risk
+              </h3>
+            </div>
+            {project.lastRiskAssessment?.riskCategory ? (
+              <>
+                <p style={{ marginBottom: "0.6rem" }}>
+                  <span
+                    className={riskBadgeClass(
+                      project.lastRiskAssessment.riskCategory,
+                    )}
+                  >
+                    {project.lastRiskAssessment.riskCategory}
+                  </span>
+                </p>
+                <p className="card-meta">
+                  Exposure limit{" "}
+                  <span className="mono">
+                    {project.lastRiskAssessment.exposureLimit?.toFixed(2)}
+                  </span>
+                </p>
+              </>
+            ) : (
+              <p className="card-meta">
+                Not scored yet. Risk sets how much of the budget the escrow will
+                hold at once.
+              </p>
+            )}
+
+            {isClient &&
+              project.freelancer &&
+              !project.lastRiskAssessment?.computedAt && (
+                <button
+                  className="block"
+                  style={{ marginTop: "1rem" }}
+                  onClick={handleAssessRisk}
+                >
+                  Assess risk <FiShield />
+                </button>
+              )}
+
+            {isClient &&
+              project.freelancer &&
+              project.lastRiskAssessment?.computedAt &&
+              !project.escrowContractAddress && (
+                <button
+                  className="block"
+                  style={{ marginTop: "1rem" }}
+                  onClick={handleDeployEscrow}
+                >
+                  Fund escrow <FiLock />
+                </button>
+              )}
+          </section>
+
+          <section className="card card-lg">
+            <div className="card-head">
+              <h3>
+                <FiLock /> Contract
+              </h3>
+            </div>
+            <p className="card-meta" style={{ marginBottom: "0.5rem" }}>
+              Escrow
+            </p>
+            {project.escrowContractAddress ? (
+              <>
+                <a
+                  className="contract-link"
+                  href={`https://sepolia.etherscan.io/address/${project.escrowContractAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <FiExternalLink />
+                  <span className="mono">{project.escrowContractAddress}</span>
+                </a>
+                <button
+                  className="secondary sm"
+                  style={{ marginTop: "0.9rem" }}
+                  onClick={() => {
+                    navigator.clipboard?.writeText(
+                      project.escrowContractAddress,
+                    );
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1800);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy address"}{" "}
+                  {copied ? <FiCheck /> : <FiCopy />}
+                </button>
+              </>
+            ) : (
+              <p className="card-meta" style={{ color: "var(--text-soft)" }}>
+                Not deployed
+              </p>
+            )}
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
