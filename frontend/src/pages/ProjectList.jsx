@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../AuthContext.jsx";
 import { riskBadgeClass } from "../badges.js";
+import Register from "./Register.jsx";
 
 const BACKEND_URL = "http://localhost:3000";
 
 export default function ProjectList() {
-  const { walletAddress, user, error, connectWallet } = useAuth();
+  const { walletAddress, user, error, connectWallet, needsRegistration } =
+    useAuth();
   const [projects, setProjects] = useState([]);
 
   useEffect(() => {
@@ -24,6 +26,7 @@ export default function ProjectList() {
       </div>
     );
   }
+  if (needsRegistration) return <Register />;
 
   return (
     <div>
